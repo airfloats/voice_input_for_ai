@@ -4,6 +4,8 @@
 
 **按住热键说话，文字实时出现在光标处。全程本地核显运行，不联网、不收费、不动剪贴板。**
 
+**简体中文** · [English](README.en.md)
+
 ![Platform](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11--3.14-3776AB?logo=python&logoColor=white)
 ![ASR](https://img.shields.io/badge/ASR-SenseVoice%20%C2%B7%20DirectML-38BDF8)
@@ -14,15 +16,51 @@
 
 ---
 
+## 📸 效果展示
+
+<table>
+<tr>
+<td width="50%" align="center"><b>边说边出字，松手后重整上屏</b><br><img src="assets/demo-typing.png" alt="实时出字演示"></td>
+<td width="50%" align="center"><b>托盘菜单：状态一目了然</b><br><img src="assets/demo-tray.png" alt="托盘菜单"></td>
+</tr>
+</table>
+
+> 左图：对着输入框说「hello hello hello，今天天气怎么样？」，文字在光标处实时出现，悬浮窗显示「已重整上屏 (368 ms)」。
+> 右图：托盘菜单显示两个后端的在线状态，可一键恢复、启停和重启服务。
+
+## 💡 使用案例
+
+**① 中英混说，直接上屏**
+在 IDE、终端、浏览器、微信、聊天框里按住热键说话，文字实时出现在光标处，不切窗口、不粘贴。
+
+**② 自动去口癖、补标点**（以下为本地 Qwen3-4B 的实测输出）
+
+| 你说的（识别原文） | 上屏结果 |
+|---|---|
+| 嗯那个就是帮我把今天的 api 接口文档发到群里然后顺便 check 一下数据库有没有报错 | 那个就是帮我把今天的 api 接口文档发到群里，然后顺便 check 一下数据库有没有报错。 |
+| 呃明天下午三点开个会啊讨论一下 kubernetes 集群升级的事情 | 明天下午三点开个会讨论一下 kubernetes 集群升级的事情。 |
+| 我想问一下这个 fakeTCP 的握手流程是不是有问题 | 我想问一下这个 fakeTCP 的握手流程是不是有问题。 |
+| 帮我把这个 pull request merge 到 main 分支然后部署一下 | 帮我把这个 pull request merge 到 main 分支然后部署一下。 |
+
+英文和技术词（`api`、`check`、`fakeTCP`、`kubernetes`、`pull request`、`merge`）原样保留，只做去口癖和补标点。
+
+**③ 换热键，适配自己的习惯**
+设置里可录制 `Copilot` 键、`RAlt`、`CapsLock` 或 `Ctrl+Space` 等任意单键/组合键，并**勾选多个同时生效**。
+
+**④ 长时间使用不掉线**
+笔记本休眠唤醒后麦克风自动重连；后端意外退出自动拉起；万一卡住，托盘点「一键恢复」。
+
+---
+
 ## ✨ 特性
 
 | | |
 |---|---|
-| ⚡ **边说边出字** | 说话时约每 420ms 增量识别，直接在任意窗口的光标处上屏（IDE、终端、浏览器、微信） |
+| ⚡ **边说边出字** | 说话时约每 420ms 增量识别，直接在任意窗口的光标处上屏 |
 | 📋 **不动剪贴板** | 通过 Win32 `SendInput` Unicode 直写；仅超长文本才回退为粘贴 |
 | 🧠 **本地核显双引擎** | SenseVoice（DirectML）识别 + Qwen3-4B（Vulkan）按需校对，无需独立显卡 |
-| ✂️ **克制的 AI 校对** | 只在含口癖或缺标点时触发；去口癖、补标点，不改用词、不动英文术语 |
-| ⌨️ **Win11 Copilot 键** | 硬件级吞掉 `Copilot (F23)` 事件，不弹搜索；支持录制多个热键同时生效 |
+| ✂️ **克制的 AI 校对** | 只在含口癖或缺标点时触发；不改用词、不动英文术语 |
+| ⌨️ **Win11 Copilot 键** | 硬件级吞掉 `Copilot (F23)` 事件，不弹搜索；支持多热键同时生效 |
 | 🛡️ **自愈** | 休眠唤醒自动重连麦克风，后端掉线自动拉起，托盘一键恢复 |
 
 ## 🆚 对比
