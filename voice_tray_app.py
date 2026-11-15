@@ -10,6 +10,7 @@ VoiceInputAI - Intel Arc 核显本地语音输入法托盘总控
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 import io
 import json
 import logging
@@ -111,8 +112,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     # --- tray tooltip ---
     "tip_listening": {"zh": "VoiceInputAI - 正在聆听...", "en": "VoiceInputAI - Listening..."},
     "tip_ready": {
-        "zh": "VoiceInputAI - 就绪（按住 Copilot 键边说边出字，松开重整）",
-        "en": "VoiceInputAI - Ready (hold your hotkey to speak, release to polish)",
+        "zh": "VoiceInputAI - 就绪（按住热键说话，松开重整上屏）",
+        "en": "VoiceInputAI - Ready (hold your hotkey to speak, release to insert)",
     },
     "tip_stopped": {"zh": "VoiceInputAI - 后端服务已关闭", "en": "VoiceInputAI - Backends stopped"},
     "tip_starting": {
@@ -222,6 +223,8 @@ def tr(key: str, **kwargs) -> str:
 # ================= Win32 常量 & SendInput（防抢焦点 / 去修饰键 / Unicode 实时出字） =================
 VK_BACK = 0x08
 VK_LEFT = 0x25
+VK_UP = 0x26
+VK_RIGHT = 0x27
 VK_F23 = 0x86
 VK_CAPITAL = 0x14
 VK_SHIFT = 0x10
@@ -235,6 +238,7 @@ VK_LMENU = 0xA4
 VK_RMENU = 0xA5
 VK_LWIN = 0x5B
 VK_RWIN = 0x5C
+VK_C = 0x43
 VK_V = 0x56
 VK_MASK_UNASSIGNED = 0xE8
 VOICE_INPUT_EXTRA_INFO = 0x564F4943  # "VOIC"：标记程序自身注入的按键事件
@@ -250,7 +254,7 @@ INPUT_KEYBOARD = 1
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
-EXTENDED_VKS = {VK_LWIN, VK_RWIN, VK_RCONTROL, VK_RMENU, VK_LEFT}
+EXTENDED_VKS = {VK_LWIN, VK_RWIN, VK_RCONTROL, VK_RMENU, VK_LEFT, VK_UP, VK_RIGHT}
 
 DEFAULT_HOTKEY_SPEC = "Copilot (VK_F23)"
 _MOD_VK_GROUPS: dict[str, tuple[int, ...]] = {
@@ -397,6 +401,92 @@ def _elevate_self_priority() -> None:
         pass
 
 
+class _PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ULONG_PTR),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", ctypes.c_long),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
+    ]
+
+
+def _find_pids_by_exe_name(exe_name: str) -> list[int]:
+    """枚举当前系统中可执行文件名匹配（不区分大小写）的 PID 列表。"""
+    target = exe_name.lower()
+    pids: list[int] = []
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
+        k32.Process32FirstW.restype = wintypes.BOOL
+        k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
+        k32.Process32NextW.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        snap = k32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if snap == wintypes.HANDLE(-1).value:
+            return pids
+        try:
+            pe = _PROCESSENTRY32W()
+            pe.dwSize = ctypes.sizeof(_PROCESSENTRY32W)
+            ok = k32.Process32FirstW(snap, ctypes.byref(pe))
+            while ok:
+                if pe.szExeFile.lower() == target:
+                    pids.append(int(pe.th32ProcessID))
+                ok = k32.Process32NextW(snap, ctypes.byref(pe))
+        finally:
+            k32.CloseHandle(snap)
+    except Exception:
+        pass
+    return pids
+
+
+def _pin_process_working_set(pid: int, min_mb: int, max_mb: int) -> bool:
+    """为指定进程设置硬最小工作集下限 (QUOTA_LIMITS_HARDWS_MIN_ENABLE | HARDWS_MAX_DISABLE)，防止热区被系统压到 200KB。"""
+    if pid <= 0 or min_mb <= 0 or max_mb < min_mb:
+        return False
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.SetProcessWorkingSetSizeEx.argtypes = [wintypes.HANDLE, ctypes.c_size_t, ctypes.c_size_t, wintypes.DWORD]
+        k32.SetProcessWorkingSetSizeEx.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        is_self = pid == os.getpid()
+        if is_self:
+            handle = k32.GetCurrentProcess()
+        else:
+            # PROCESS_SET_QUOTA (0x0100) | PROCESS_QUERY_INFORMATION (0x0400)
+            handle = k32.OpenProcess(0x0500, False, pid)
+            if not handle:
+                return False
+        try:
+            # 0x1 = QUOTA_LIMITS_HARDWS_MIN_ENABLE, 0x8 = QUOTA_LIMITS_HARDWS_MAX_DISABLE
+            ok = bool(
+                k32.SetProcessWorkingSetSizeEx(
+                    handle,
+                    ctypes.c_size_t(min_mb * 1024 * 1024),
+                    ctypes.c_size_t(max_mb * 1024 * 1024),
+                    wintypes.DWORD(0x9),
+                )
+            )
+            return ok
+        finally:
+            if not is_self:
+                k32.CloseHandle(handle)
+    except Exception:
+        return False
+
+
 def _send_vk(vk: int, key_up: bool = False) -> None:
     flags = KEYEVENTF_KEYUP if key_up else 0
     if vk in EXTENDED_VKS:
@@ -487,6 +577,129 @@ def _modifiers_down() -> bool:
     )
 
 
+_TERMINAL_CLASSES = frozenset({
+    "ConsoleWindowClass",
+    "CASCADIA_HOSTING_WINDOW_CLASS",
+    "mintty",
+    "PuTTY",
+    "VirtualConsoleClass",
+    "Ghostty",
+})
+_TERMINAL_EXES = frozenset({
+    "windowsterminal.exe",
+    "cmd.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "conhost.exe",
+    "openconsole.exe",
+    "mintty.exe",
+    "putty.exe",
+    "kitty.exe",
+    "alacritty.exe",
+    "wezterm-gui.exe",
+    "bash.exe",
+    "wsl.exe",
+    "ssh.exe",
+    "xshell.exe",
+    "securecrt.exe",
+    "mobaxterm.exe",
+})
+_SAFE_BLOCK_SELECT_CLASS_PREFIXES = (
+    "Chrome_WidgetWin_",
+    "MozillaWindowClass",
+    "Notepad",
+    "Edit",
+    "RichEdit",
+    "RICHEDIT",
+    "_WwG",
+    "WeChatMainWndForPC",
+    "ChatWnd",
+    "Qt",
+    "CefBrowserWindow",
+    "ApplicationFrameWindow",
+)
+_SAFE_BLOCK_SELECT_EXES = frozenset({
+    "notepad.exe",
+    "winword.exe",
+    "wps.exe",
+    "msedge.exe",
+    "chrome.exe",
+    "firefox.exe",
+    "code.exe",
+    "cursor.exe",
+    "antigravity.exe",
+    "wechat.exe",
+    "weixin.exe",
+    "qq.exe",
+    "feishu.exe",
+    "lark.exe",
+    "dingtalk.exe",
+    "obsidian.exe",
+    "notion.exe",
+})
+
+
+def _get_clipboard_seq() -> int:
+    try:
+        u32 = ctypes.WinDLL("user32", use_last_error=True)
+        u32.GetClipboardSequenceNumber.argtypes = []
+        u32.GetClipboardSequenceNumber.restype = wintypes.DWORD
+        return int(u32.GetClipboardSequenceNumber())
+    except Exception:
+        return 0
+
+
+def _is_block_select_safe_window() -> bool:
+    """仅在非终端桌面编辑器/浏览器/聊天窗口允许 Shift+Up + Ctrl+C 块级快选校验，防止向终端误发 SIGINT。"""
+    try:
+        u32 = ctypes.WinDLL("user32", use_last_error=True)
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        u32.GetForegroundWindow.argtypes = []
+        u32.GetForegroundWindow.restype = wintypes.HWND
+        u32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        u32.GetClassNameW.restype = ctypes.c_int
+        u32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        u32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        k32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+        hwnd = u32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        cbuf = ctypes.create_unicode_buffer(256)
+        u32.GetClassNameW(hwnd, cbuf, 256)
+        cls_name = cbuf.value or ""
+        if cls_name in _TERMINAL_CLASSES:
+            return False
+
+        pid = wintypes.DWORD(0)
+        u32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        exe_name = ""
+        if pid.value:
+            h = k32.OpenProcess(0x1000, False, pid.value)
+            if h:
+                try:
+                    ebuf = ctypes.create_unicode_buffer(260)
+                    sz = wintypes.DWORD(260)
+                    if k32.QueryFullProcessImageNameW(h, 0, ebuf, ctypes.byref(sz)):
+                        exe_name = (ebuf.value or "").rsplit("\\", 1)[-1].lower()
+                finally:
+                    k32.CloseHandle(h)
+        if exe_name in _TERMINAL_EXES:
+            return False
+        return cls_name.startswith(_SAFE_BLOCK_SELECT_CLASS_PREFIXES) or exe_name in _SAFE_BLOCK_SELECT_EXES
+    except Exception:
+        return False
+
+
 def _wait_modifiers_up(timeout: float = 0.4) -> bool:
     deadline = time.perf_counter() + timeout
     while time.perf_counter() < deadline:
@@ -551,6 +764,7 @@ class BackendServiceManager:
         self.asr_online = False
         self.llm_online = False
         self.stopping = False
+        self._pinned_ws_pids: dict[str, tuple[int, int]] = {}
 
     def _port_alive(self, url: str) -> bool:
         try:
@@ -563,6 +777,45 @@ class BackendServiceManager:
         self.asr_online = self._port_alive(f"http://{ASR_HOST}:{ASR_PORT}/")
         self.llm_online = self._port_alive(f"http://{LLM_HOST}:{LLM_PORT}/health")
         return self.asr_online, self.llm_online
+
+    def _resolve_asr_pid(self) -> Optional[int]:
+        if self.asr_proc is not None and self.asr_proc.poll() is None:
+            return int(self.asr_proc.pid)
+        if self.asr_online and ASR_PID_FILE.exists():
+            try:
+                pid = int(ASR_PID_FILE.read_text(encoding="utf-8").strip())
+                py_pids = set(_find_pids_by_exe_name("python.exe")) | set(_find_pids_by_exe_name("pythonw.exe"))
+                if pid in py_pids:
+                    return pid
+            except Exception:
+                pass
+        return None
+
+    def _resolve_llm_pid(self) -> Optional[int]:
+        if self.llm_proc is not None and self.llm_proc.poll() is None:
+            return int(self.llm_proc.pid)
+        if self.llm_online:
+            pids = _find_pids_by_exe_name("llama-server.exe")
+            if pids:
+                return pids[0]
+        return None
+
+    def reserve_hot_working_sets(self) -> None:
+        """为 UI 渲染、ASR 与 LLM 重整的 CPU 热工作区设置硬下限（合计 448 MB），避免高提交负载下被系统压回 200KB~14MB。"""
+        targets: list[tuple[str, Optional[int], int, int]] = [
+            ("tray", os.getpid(), 96, 256),
+            ("asr", self._resolve_asr_pid(), 128, 384),
+            ("llm", self._resolve_llm_pid(), 224, 512),
+        ]
+        for role, pid, min_mb, max_mb in targets:
+            if not pid or self._pinned_ws_pids.get(role) == (pid, min_mb):
+                continue
+            ok = _pin_process_working_set(pid, min_mb, max_mb)
+            self._pinned_ws_pids[role] = (pid, min_mb)
+            if ok:
+                logger.info("已预留热区工作集 [%s] PID=%d min=%dMB", role, pid, min_mb)
+            else:
+                logger.warning("预留热区工作集失败 [%s] PID=%d min=%dMB", role, pid, min_mb)
 
     def _kill_existing_binaries(self) -> None:
         if ASR_PID_FILE.exists():
@@ -918,7 +1171,7 @@ class FloatingOverlay:
             v_preview = tk.BooleanVar(value=bool(state.get("enable_live_preview", True)))
             v_capslock = tk.BooleanVar(value=bool(state.get("enable_capslock_backup", False)))
             v_interval = tk.StringVar(value=str(state.get("preview_interval_ms", 420)))
-            v_paste_thr = tk.StringVar(value=str(state.get("paste_threshold_chars", 300)))
+            v_paste_thr = tk.StringVar(value=str(state.get("paste_threshold_chars", 24)))
             v_lang = tk.StringVar(value=str(state.get("ui_language", "auto")))
 
             chk_opts = {
@@ -1274,7 +1527,7 @@ class FloatingOverlay:
                 try:
                     pt = max(20, min(1000, int(v_paste_thr.get())))
                 except ValueError:
-                    pt = 300
+                    pt = 24
                 new_hotkeys = [spec_k for spec_k, (var, _) in hk_entries.items() if var.get()] or [DEFAULT_HOTKEY_SPEC]
                 new_cfg = {
                     "auto_start": bool(v_autostart.get()),
@@ -1421,7 +1674,7 @@ class VoiceInputApp:
 
         self.enable_llm_polish = True
         self.enable_live_preview = True
-        self.enable_live_cursor_typing = True  # 边说边在光标处实时出字，松开重整替换
+        self.enable_live_cursor_typing = False  # 默认仅悬浮窗预览，松开秒贴终稿；可在托盘随时开启边说边上屏
         self.enable_capslock_backup = False  # 默认专注 Copilot 键 (F23)，可在托盘开启 CapsLock 备用
         self.hotkeys: list[str] = [DEFAULT_HOTKEY_SPEC]
         self._compiled_hotkeys: list[tuple[frozenset[str], int]] = []
@@ -1429,7 +1682,7 @@ class VoiceInputApp:
         self._capture_hotkey_cb = None
         self._cap_held_mods: set[int] = set()
         self.preview_interval_ms = int(PREVIEW_INTERVAL * 1000)
-        self.paste_threshold_chars = 300
+        self.paste_threshold_chars = 24
         self.ui_language = "auto"
         self._load_config()
         set_ui_language(self.ui_language)
@@ -1449,21 +1702,31 @@ class VoiceInputApp:
         self._audio_chunks: list[np.ndarray] = []
         self._audio_lock = threading.Lock()
         self._stream: Optional[sd.InputStream] = None
+        self._stream_io_lock = threading.RLock()
+        self._stream_closed_ev = threading.Event()
+        self._stream_closed_ev.set()
+        self._last_audio_reinit_ts = 0.0
         self._preview_stop_ev = threading.Event()
         self._processing_lock = threading.Lock()
         self._mod_release_lock = threading.Lock()
         self._last_preview_text = ""
         self._last_tray_state: Optional[tuple[bool, bool, bool, bool]] = None
+        self._tray_update_ev = threading.Event()
+        self._tray_rendered_key: Optional[tuple[str, str]] = None
+        self._tray_icon_cache = {}
         self._paste_seq = 0
         self._last_llm_active_ts = time.time()
         self._asr_session = requests.Session()
         self._asr_session.trust_env = False
+        self._asr_preview_session = requests.Session()
+        self._asr_preview_session.trust_env = False
         self._llm_session = requests.Session()
         self._llm_session.trust_env = False
 
         self._kb_listener: Optional[pynput_keyboard.Listener] = None
         self.tray_icon: Optional[pystray.Icon] = None
         self._stop_all = threading.Event()
+        threading.Thread(target=self._tray_updater_loop, daemon=True).start()
 
     # ---------- 配置持久化与开机自启 ----------
     def _load_config(self) -> None:
@@ -1641,7 +1904,22 @@ class VoiceInputApp:
         d.line((23, 52, 41, 52), fill="white", width=4)
         return img
 
-    def _update_tray_appearance(self) -> None:
+    def _schedule_tray_update(self) -> None:
+        self._tray_update_ev.set()
+
+    def _tray_updater_loop(self) -> None:
+        while not self._stop_all.is_set():
+            if not self._tray_update_ev.wait(timeout=1.0):
+                continue
+            self._tray_update_ev.clear()
+            if self._stop_all.is_set():
+                break
+            try:
+                self._apply_tray_appearance_sync()
+            except Exception as e:
+                logger.debug("异步刷新托盘图标失败: %s", e)
+
+    def _apply_tray_appearance_sync(self) -> None:
         if not self.tray_icon:
             return
         asr_ok, llm_ok = self.svc.asr_online, self.svc.llm_online
@@ -1658,8 +1936,24 @@ class VoiceInputApp:
             color = "#F59E0B"  # 黄色：加载/部分离线
             tip = tr("tip_starting", asr=tr("w_on" if asr_ok else "w_off"), llm=tr("w_on" if llm_ok else "w_off"))
 
-        self.tray_icon.icon = self._make_icon_image(color)
+        key = (color, tip)
+        if key == self._tray_rendered_key:
+            return
+        icon_img = self._tray_icon_cache.get(color)
+        if icon_img is None:
+            icon_img = self._make_icon_image(color)
+            self._tray_icon_cache[color] = icon_img
+        # 在独立后台线程更新 Shell_NotifyIconW，避免 Explorer 繁忙时拖慢录音起停
+        t0 = time.perf_counter()
+        self.tray_icon.icon = icon_img
         self.tray_icon.title = tip
+        self._tray_rendered_key = key
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        if elapsed_ms >= 200.0:
+            logger.info("系统托盘图标更新较慢 (Explorer/DWM 负载高): %.0fms", elapsed_ms)
+
+    def _update_tray_appearance(self) -> None:
+        self._schedule_tray_update()
 
     # ---------- 录音与识别管线 ----------
     def _audio_callback(self, indata, frames, time_info, status) -> None:
@@ -1705,13 +1999,20 @@ class VoiceInputApp:
                 self._audio_chunks.clear()
 
             try:
-                self._stream = sd.InputStream(
-                    samplerate=SAMPLE_RATE,
-                    channels=1,
-                    dtype="int16",
-                    callback=self._audio_callback,
-                )
-                self._stream.start()
+                self._stream_closed_ev.wait(timeout=3.0)
+                t_open0 = time.perf_counter()
+                with self._stream_io_lock:
+                    self._stream = sd.InputStream(
+                        samplerate=SAMPLE_RATE,
+                        channels=1,
+                        dtype="int16",
+                        callback=self._audio_callback,
+                    )
+                    self._stream.start()
+                    self._record_start_ts = time.time()
+                open_ms = (time.perf_counter() - t_open0) * 1000.0
+                if open_ms >= 200.0:
+                    logger.info("打开麦克风较慢: %.0fms", open_ms)
             except Exception as e:
                 logger.error("打开麦克风失败: %s", e)
                 self._recording = False
@@ -1760,7 +2061,18 @@ class VoiceInputApp:
 
     def _live_preview_worker(self, session_id: int) -> None:
         unchanged_count = 0
-        while not self._preview_stop_ev.wait(self.preview_interval_ms / 1000.0):
+        # 首次预览提前就绪：先等待约 0.42s 攒够首段 PCM，避免空等两个完整 interval
+        deadline = time.perf_counter() + 0.42
+        while not self._preview_stop_ev.is_set():
+            rem = deadline - time.perf_counter()
+            if rem > 0 and self._preview_stop_ev.wait(rem):
+                return
+            if len(self._get_recorded_pcm()) >= int(SAMPLE_RATE * 0.4):
+                break
+            deadline = time.perf_counter() + 0.10
+        first_round = True
+        while first_round or not self._preview_stop_ev.wait(self.preview_interval_ms / 1000.0):
+            first_round = False
             try:
                 if not self._recording or session_id != self._session_id:
                     break
@@ -1792,7 +2104,8 @@ class VoiceInputApp:
                     if preview != self._last_preview_text:
                         unchanged_count = 0
                         self._last_preview_text = preview
-                        if self.enable_live_cursor_typing:
+                        # 首段仅 1~4 字且 <1.1s 时先在悬浮窗预览，等语境稳定再落盘到光标，减少整句回退重选
+                        if self.enable_live_cursor_typing and (self._live_cursor_text or elapsed >= 1.1 or len(preview) >= 5):
                             self._sync_cursor_text_locked(preview, is_live=True)
                         logger.info("[预览 %.1fs] asr=%r | cursor=%r", elapsed, preview, self._live_cursor_text)
                         if self.enable_live_preview:
@@ -1804,16 +2117,38 @@ class VoiceInputApp:
             except Exception:
                 logger.exception("实时预览线程异常")
 
-    @staticmethod
-    def _reinit_audio_backend() -> None:
+    def _reinit_audio_backend(self, force: bool = False) -> None:
+        self._stream_closed_ev.wait(timeout=3.0)
+        with self._stream_io_lock:
+            if not force and (self._recording or self._stream is not None):
+                return
+            now = time.time()
+            if not force and (now - self._last_audio_reinit_ts < 3.0):
+                return
+            self._last_audio_reinit_ts = now
+            try:
+                sd._terminate()
+                sd._initialize()
+                logger.info("PortAudio 音频后端已重新初始化")
+            except Exception as e:
+                logger.warning("PortAudio 重新初始化失败: %s", e)
+
+    def _close_stream_async(self, stream) -> None:
+        t0 = time.perf_counter()
         try:
-            sd._terminate()
-            sd._initialize()
-            logger.info("PortAudio 音频后端已重新初始化")
-        except Exception as e:
-            logger.warning("PortAudio 重新初始化失败: %s", e)
+            with self._stream_io_lock:
+                stream.stop()
+                stream.close()
+        except Exception:
+            pass
+        finally:
+            self._stream_closed_ev.set()
+        close_ms = (time.perf_counter() - t0) * 1000.0
+        if close_ms >= 200.0:
+            logger.info("异步关闭麦克风较慢: %.0fms", close_ms)
 
     def _stop_recording(self) -> None:
+        stream_to_close = None
         with self._state_lock:
             if not self._recording:
                 return
@@ -1823,15 +2158,14 @@ class VoiceInputApp:
             duration = time.time() - self._record_start_ts
 
             if self._stream is not None:
-                try:
-                    self._stream.stop()
-                    self._stream.close()
-                except Exception:
-                    pass
+                stream_to_close = self._stream
                 self._stream = None
+                self._stream_closed_ev.clear()
 
-        self._update_tray_appearance()
         pcm = self._get_recorded_pcm()
+        if stream_to_close is not None:
+            threading.Thread(target=self._close_stream_async, args=(stream_to_close,), daemon=True).start()
+        self._schedule_tray_update()
 
         if duration < MIN_HOLD_SECONDS or len(pcm) < int(SAMPLE_RATE * 0.2):
             with self._cursor_lock:
@@ -1854,8 +2188,9 @@ class VoiceInputApp:
 
     def _call_asr(self, pcm: np.ndarray, timeout: float = 15.0, is_preview: bool = False) -> str:
         wav_bytes = _pcm_to_wav_bytes(pcm)
+        sess = self._asr_preview_session if is_preview else self._asr_session
         try:
-            resp = self._asr_session.post(
+            resp = sess.post(
                 ASR_URL,
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
                 data={"lid": "zh", "preview": "1" if is_preview else "0"},
@@ -1934,10 +2269,77 @@ class VoiceInputApp:
             i += 1
         return i
 
-    def _send_unicode_diff(self, backspaces: int, insert_text: str) -> None:
+    @staticmethod
+    def _utf16_len(text: str) -> int:
+        return len(text.encode("utf-16-le")) // 2 if text else 0
+
+    @staticmethod
+    def _align_live_append_delta(old_text: str, target_text: str) -> str:
+        """按尾部非标点锚点对齐流式追加文本，支持尾部 1~2 字修订回溯，杜绝句中补标点造成索引错位或重字。"""
+        if not old_text:
+            return target_text
+        if target_text.startswith(old_text):
+            return target_text[len(old_text) :]
+
+        punct_re = re.compile(r"[\s，。、？！,.?!:：;；“”\"'()（）]")
+        old_np = "".join(ch for ch in old_text if not punct_re.match(ch))
+        tgt_np_chars: list[str] = []
+        tgt_np_end_idx: list[int] = []
+        for idx, ch in enumerate(target_text):
+            if not punct_re.match(ch):
+                tgt_np_chars.append(ch)
+                tgt_np_end_idx.append(idx + 1)
+        tgt_np = "".join(tgt_np_chars)
+
+        if len(old_np) >= 3:
+            tol = max(6, len(old_np) // 4)
+            for trim in (0, 1, 2):
+                exp_pos = len(old_np) - trim
+                if exp_pos < 3:
+                    continue
+                min_k = 3 if trim == 0 else 4
+                max_k = min(10, exp_pos)
+                for k in range(max_k, min_k - 1, -1):
+                    anchor = old_np[exp_pos - k : exp_pos]
+                    best_end_np = None
+                    best_dist = tol + 1
+                    start = 0
+                    while True:
+                        pos = tgt_np.find(anchor, start)
+                        if pos < 0:
+                            break
+                        end_np = pos + k
+                        dist = abs(end_np - exp_pos)
+                        if dist <= best_dist:
+                            best_dist = dist
+                            best_end_np = end_np
+                        start = pos + 1
+                    if best_end_np is not None:
+                        if trim == 0:
+                            cut_idx = tgt_np_end_idx[best_end_np - 1]
+                            return target_text[cut_idx:]
+                        tgt_tail = tgt_np[best_end_np:]
+                        old_tail = old_np[-trim:]
+                        shift_pos = tgt_tail.find(old_tail)
+                        skip_np = (shift_pos + len(old_tail)) if 0 <= shift_pos <= 2 else trim
+                        adj_end_np = best_end_np + skip_np
+                        if adj_end_np < len(tgt_np_end_idx):
+                            cut_idx = tgt_np_end_idx[adj_end_np - 1]
+                            return target_text[cut_idx:]
+                        return ""
+
+        if len(tgt_np) > len(old_np):
+            if old_np:
+                cut_idx = tgt_np_end_idx[len(old_np) - 1]
+                return target_text[cut_idx:]
+            return target_text
+        return ""
+
+    def _send_unicode_diff(self, backspaces: int, insert_text: str, release_modifiers: bool = True) -> None:
         if backspaces <= 0 and not insert_text:
             return
-        self._release_held_modifiers()
+        if release_modifiers:
+            self._release_held_modifiers()
 
         if backspaces > 0:
             bs_events: list[INPUT] = []
@@ -1946,7 +2348,7 @@ class VoiceInputApp:
                 bs_events.append(_make_vk_input(VK_BACK, key_up=True))
             for start in range(0, len(bs_events), 200):
                 _send_input_batch(bs_events[start : start + 200])
-            time.sleep(0.015)
+            time.sleep(0.01)
 
         if insert_text:
             chunk_size = 100
@@ -1954,22 +2356,116 @@ class VoiceInputApp:
                 chunk = insert_text[start : start + chunk_size]
                 _send_input_batch(_make_unicode_events(chunk))
 
-    def _select_left_chars(self, count: int) -> None:
-        """用 Shift+Left 批量选中左侧旧字，避免大量 VK_BACK 在 Electron/Chromium 中逐字触发 DOM 重排动画。"""
+    @staticmethod
+    def _send_shift_arrows(vk: int, count: int) -> None:
+        if count <= 0:
+            return
+        events: list[INPUT] = [_make_vk_input(VK_LSHIFT, key_up=False)]
+        for _ in range(count):
+            events.append(_make_vk_input(vk, key_up=False))
+            events.append(_make_vk_input(vk, key_up=True))
+        events.append(_make_vk_input(VK_LSHIFT, key_up=True))
+        for start in range(0, len(events), 240):
+            _send_input_batch(events[start : start + 240])
+
+    @staticmethod
+    def _probe_selection_via_copy(timeout_s: float = 0.09) -> Optional[str]:
+        seq0 = _get_clipboard_seq()
+        _send_input_batch(
+            [
+                _make_vk_input(VK_CONTROL, key_up=False),
+                _make_vk_input(VK_C, key_up=False),
+                _make_vk_input(VK_C, key_up=True),
+                _make_vk_input(VK_CONTROL, key_up=True),
+            ]
+        )
+        deadline = time.perf_counter() + timeout_s
+        while time.perf_counter() < deadline:
+            if _get_clipboard_seq() != seq0:
+                time.sleep(0.002)
+                try:
+                    return pyperclip.paste()
+                except Exception:
+                    return None
+            time.sleep(0.002)
+        return None
+
+    @staticmethod
+    def _collapse_selection_right() -> None:
+        _send_input_batch([_make_vk_input(VK_RIGHT, key_up=False), _make_vk_input(VK_RIGHT, key_up=True)])
+        time.sleep(0.006)
+
+    def _select_left_via_block_jump(self, count: int, expected_suffix: str) -> bool:
+        """用 Shift+Up 整行块级跳转 + 剪贴板序列号极速校验并精准收边，避免上百次 Shift+Left 逐字动画。"""
+        exp_norm = expected_suffix.replace("\r\n", "\n")
+        exp_u16 = self._utf16_len(exp_norm)
+        has_selection = False
+        prev_sel_u16 = 0
+        rem_u16 = count
+        up_steps = 0
+
+        for _ in range(6):
+            self._send_shift_arrows(VK_UP, 1)
+            up_steps += 1
+            time.sleep(0.004)
+            copied = self._probe_selection_via_copy(timeout_s=0.09)
+            if not copied:
+                if has_selection:
+                    self._collapse_selection_right()
+                return False
+
+            has_selection = True
+            sel_norm = copied.replace("\r\n", "\n")
+            sel_u16 = self._utf16_len(sel_norm)
+
+            if sel_norm == exp_norm:
+                logger.debug("块级快选精确命中: %d Shift+Up (替代 %d Shift+Left)", up_steps, count)
+                time.sleep(0.004)
+                return True
+
+            if exp_norm.endswith(sel_norm):
+                rem_u16 = max(0, exp_u16 - sel_u16)
+                if sel_u16 <= prev_sel_u16 or rem_u16 <= 24:
+                    if rem_u16 > 0:
+                        self._send_shift_arrows(VK_LEFT, rem_u16)
+                    logger.debug("块级快选收敛: %d Shift+Up + %d Shift+Left (替代 %d)", up_steps, rem_u16, count)
+                    time.sleep(0.006)
+                    return True
+                prev_sel_u16 = sel_u16
+                continue
+
+            if len(sel_norm) > len(exp_norm) and sel_norm.endswith(exp_norm):
+                overshoot_prefix = sel_norm[: len(sel_norm) - len(exp_norm)]
+                overshoot_u16 = self._utf16_len(overshoot_prefix)
+                if "\n" not in overshoot_prefix and overshoot_u16 <= 48:
+                    if overshoot_u16 > 0:
+                        self._send_shift_arrows(VK_RIGHT, overshoot_u16)
+                    logger.debug("块级快选回修: %d Shift+Up + %d Shift+Right (替代 %d)", up_steps, overshoot_u16, count)
+                    time.sleep(0.006)
+                    return True
+
+            self._collapse_selection_right()
+            return False
+
+        if has_selection and rem_u16 > 0:
+            self._send_shift_arrows(VK_LEFT, rem_u16)
+            logger.debug("块级快选达到上限后补选: %d Shift+Up + %d Shift+Left (总计 %d)", up_steps, rem_u16, count)
+            time.sleep(0.006)
+            return True
+        if has_selection:
+            self._collapse_selection_right()
+        return False
+
+    def _select_left_chars(self, count: int, expected_suffix: str = "") -> None:
+        """选中左侧旧字：长串在安全桌面窗口优先用 Shift+Up 块级快选，回退为 Shift+Left 批量投递。"""
         if count <= 0:
             return
         self._release_held_modifiers()
-        _send_input_batch([_make_vk_input(VK_LSHIFT, key_up=False)])
-        left_events: list[INPUT] = []
-        for _ in range(count):
-            left_events.append(_make_vk_input(VK_LEFT, key_up=False))
-            left_events.append(_make_vk_input(VK_LEFT, key_up=True))
-        for start in range(0, len(left_events), 40):
-            _send_input_batch(left_events[start : start + 40])
-            if start + 40 < len(left_events):
-                time.sleep(0.003)
-        _send_input_batch([_make_vk_input(VK_LSHIFT, key_up=True)])
-        time.sleep(0.015)
+        if count >= 28 and expected_suffix and _is_block_select_safe_window():
+            if self._select_left_via_block_jump(count, expected_suffix):
+                return
+        self._send_shift_arrows(VK_LEFT, count)
+        time.sleep(0.008)
 
     def _sync_cursor_text_locked(self, target_text: str, is_live: bool = True) -> None:
         old_text = self._live_cursor_text
@@ -1981,31 +2477,34 @@ class VoiceInputApp:
 
         # 物理修饰键（如 Copilot 键的 LWin+LShift）仍按住时，严禁向焦点窗口发送 VK_BACK，
         # 否则 Electron/Chromium 会把 Win+Shift+Backspace 当成快捷键并残留旧字导致文本错乱。
-        # 若有新增长内容，改为单调追加尾部新字（避免停顿改标点/微调后整句卡死不再输出），
-        # 并精确同步 _live_cursor_text，待松手后再一次性退格替换成最终校对稿。
+        # 若有新增长内容，改为按尾字锚点对齐后追加新词，待松手后一次性选中重整成终稿。
         if is_live and backspaces > 0 and _modifiers_down():
-            if len(target_text) > len(old_text):
-                delta = target_text[len(old_text):]
-                self._send_unicode_diff(0, delta)
+            delta = self._align_live_append_delta(old_text, target_text)
+            if delta:
+                self._send_unicode_diff(0, delta, release_modifiers=False)
                 self._live_cursor_text = old_text + delta
             return
 
+        bs_units = self._utf16_len(old_text[lcp:]) if backspaces > 0 else 0
         if not is_live and backspaces > 8:
-            self._select_left_chars(backspaces)
+            block_expected = old_text[lcp:] if len(insert_text) > self.paste_threshold_chars else ""
+            self._select_left_chars(bs_units, expected_suffix=block_expected)
             if insert_text:
                 if len(insert_text) > self.paste_threshold_chars:
                     self._paste_to_cursor(insert_text, wait_modifiers=False)
                 else:
-                    self._send_unicode_diff(0, insert_text)
+                    self._send_unicode_diff(0, insert_text, release_modifiers=False)
             else:
-                self._send_unicode_diff(1, "")
+                self._send_unicode_diff(1, "", release_modifiers=False)
         elif not is_live and len(insert_text) > self.paste_threshold_chars:
-            if backspaces > 0:
-                self._send_unicode_diff(backspaces, "")
-                time.sleep(0.015)
-            self._paste_to_cursor(insert_text, wait_modifiers=False)
+            if bs_units > 0:
+                self._send_unicode_diff(bs_units, "")
+                time.sleep(0.008)
+                self._paste_to_cursor(insert_text, wait_modifiers=False)
+            else:
+                self._paste_to_cursor(insert_text, wait_modifiers=True)
         else:
-            self._send_unicode_diff(backspaces, insert_text)
+            self._send_unicode_diff(bs_units, insert_text)
 
         self._live_cursor_text = target_text
 
@@ -2013,19 +2512,20 @@ class VoiceInputApp:
         if not text:
             return
         if wait_modifiers:
-            time.sleep(0.03)
-        self._release_held_modifiers()
+            time.sleep(0.025)
+            self._release_held_modifiers()
 
         copied = False
-        for _ in range(4):
+        for attempt in range(4):
             try:
                 pyperclip.copy(text)
-                time.sleep(0.015)
+                if attempt > 0:
+                    time.sleep(0.01)
                 if pyperclip.paste() == text:
                     copied = True
                     break
             except Exception:
-                time.sleep(0.015)
+                time.sleep(0.01)
 
         if not copied:
             logger.warning("剪贴板写入未就绪，回退为 Unicode 逐字输入")
@@ -2214,16 +2714,22 @@ class VoiceInputApp:
             self._key_held = False
             self._active_key_vk = None
 
+        stream_to_close = None
         with self._state_lock:
             self._recording = False
             self._preview_stop_ev.set()
             if self._stream is not None:
+                stream_to_close = self._stream
+                self._stream = None
+
+        if stream_to_close is not None:
+            with self._stream_io_lock:
                 try:
-                    self._stream.stop()
-                    self._stream.close()
+                    stream_to_close.stop()
+                    stream_to_close.close()
                 except Exception:
                     pass
-                self._stream = None
+        self._stream_closed_ev.wait(timeout=3.0)
 
         with self._cursor_lock:
             self._live_cursor_text = ""
@@ -2236,7 +2742,7 @@ class VoiceInputApp:
                 pass
             self._kb_listener = None
         self._start_keyboard_listener()
-        self._reinit_audio_backend()
+        self._reinit_audio_backend(force=True)
 
         if not (self.svc.asr_online and (self.svc.llm_online or not self.enable_llm_polish)):
             threading.Thread(target=self.svc.start_services, daemon=True).start()
@@ -2352,6 +2858,7 @@ class VoiceInputApp:
         def on_exit(icon, item):
             logger.info("用户通过托盘退出 VoiceInputAI...")
             self._stop_all.set()
+            self._tray_update_ev.set()
             if self._kb_listener:
                 self._kb_listener.stop()
             self.svc.stop_services()
@@ -2410,6 +2917,7 @@ class VoiceInputApp:
         offline_streak = 0
         while not self._stop_all.wait(3.0):
             asr_ok, llm_ok = self.svc.refresh_status()
+            self.svc.reserve_hot_working_sets()
             # 后端被意外杀掉时自动拉起（连续 3 次=约 9 秒离线才重启，避免启动阶段误判）
             if (not asr_ok or not llm_ok) and not self.svc.stopping:
                 offline_streak += 1
@@ -2428,6 +2936,7 @@ class VoiceInputApp:
 
     def run(self) -> None:
         logger.info("VoiceInputApp.run() 开始执行 PID=%d", os.getpid())
+        self.svc.reserve_hot_working_sets()
         # 启动后台 ASR 与 Qwen3-4B 核显服务
         threading.Thread(target=self.svc.start_services, daemon=True).start()
         # 启动 Copilot 键监听
