@@ -115,15 +115,48 @@ pip install -r requirements.txt
 
 > 若希望保持主 Python 环境精简，也可将 `onnxruntime-directml`、`sentencepiece`、`numpy` 等推理依赖单独安装到仓库根目录的 `py_deps/` 下（服务脚本会自动优先加载）。
 
-### 2. 准备模型与推理引擎（仓库未包含大体积二进制文件）
+### 2. 下载模型与推理框架（仓库未包含大体积二进制文件）
 
-1. **SenseVoice-Small FP16 ONNX 模型**（放入 `models/sensevoice/`）：
+所有依赖的开源模型与 GPU 推理框架均提供免费官方下载地址，按需获取后放入对应目录即可：
+
+#### 下载总览
+
+| 组件 | 作用 | 下载地址（官方源 / 国内镜像） | 本地放置路径 |
+|---|---|---|---|
+| **SenseVoice-Small** | 开源语音识别原模型（ASR） | • GitHub: https://github.com/FunAudioLLM/SenseVoice<br>• ModelScope: https://modelscope.cn/models/iic/SenseVoiceSmall<br>• Hugging Face: https://huggingface.co/FunAudioLLM/SenseVoiceSmall | 见下方 ONNX 导出/获取方式 |
+| **SenseVoice-ONNX FP16** | Pure-ONNX 导出脚本与 `fp16` 模型 | • 导出项目: https://github.com/HaujetZhao/SenseVoice-ONNX<br>• 预导出模型（可在整合包内提取）: https://github.com/HaujetZhao/CapsWriter-Offline/releases | `models/sensevoice/`<br>(`SenseVoice-Encoder.fp16.onnx`, `SenseVoice-CTC.fp16.onnx`, `tokenizer.bpe.model`) |
+| **ONNX Runtime DirectML** | Windows 核显 / GPU 通用推理后端 | • PyPI: https://pypi.org/project/onnxruntime-directml/<br>• GitHub: https://github.com/microsoft/onnxruntime | `pip install onnxruntime-directml`（或解压至 `py_deps/`） |
+| **Qwen3-4B-Q4_K_M.gguf** | 本地轻量语义纠偏与标点补全 | • Hugging Face: https://huggingface.co/Qwen/Qwen3-4B-GGUF<br>• 直链: https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf<br>• ModelScope: https://modelscope.cn/models/Qwen/Qwen3-4B-GGUF | `models/Qwen3-4B-Q4_K_M.gguf` |
+| **llama.cpp (Windows Vulkan)** | Qwen3-4B 核显 Vulkan 推理服务端 | • Releases: https://github.com/ggml-org/llama.cpp/releases<br>*(选择 `llama-*-bin-win-vulkan-x64.zip`)*<br>• GitHub: https://github.com/ggml-org/llama.cpp | `bin/llama/`<br>*(含 `llama-server.exe`、`ggml-vulkan.dll` 等)* |
+
+#### 快速获取命令示例
+
+1. **导出或获取 SenseVoice-Small FP16 ONNX 模型**（放入 `models/sensevoice/`）：
+   ```bash
+   # 方式 A：使用 SenseVoice-ONNX 自行导出 fp16 模型
+   pip install modelscope
+   modelscope download --model iic/SenseVoiceSmall
+   git clone https://github.com/HaujetZhao/SenseVoice-ONNX.git
+   # 按该仓库说明依次运行 01-Export-Encoder.py / 02-Export-CTC.py / 03-Prepare-Assets.py
+
+   # 方式 B：从 CapsWriter-Offline Releases 下载整合包，提取其中已导出的 fp16.onnx 与 tokenizer.bpe.model
+   ```
+   确保 `models/sensevoice/` 内包含以下 3 个文件：
    - `SenseVoice-Encoder.fp16.onnx`
    - `SenseVoice-CTC.fp16.onnx`
    - `tokenizer.bpe.model`
-2. **Qwen3-4B 润色模型与 llama.cpp Vulkan 后端**（如需启用本地校对）：
-   - 将 `Qwen3-4B-Q4_K_M.gguf` 放入 `models/`
-   - 将 Vulkan 编译版 `llama-server.exe`（及配套 DLL）放入 `bin/llama/`
+
+2. **下载 Qwen3-4B GGUF 模型**（放入 `models/`，若不需要本地润色可跳过）：
+   ```bash
+   # Hugging Face CLI / ModelScope CLI 或浏览器直链下载
+   pip install modelscope
+   modelscope download --model Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local_dir ./models
+   ```
+
+3. **下载 llama.cpp Windows Vulkan 版**（解压放入 `bin/llama/`）：
+   - 打开 https://github.com/ggml-org/llama.cpp/releases
+   - 下载最新的 `llama-<tag>-bin-win-vulkan-x64.zip`
+   - 将压缩包内全部 `.exe` / `.dll` 解压到 `bin/llama/`（需包含 `llama-server.exe` 与 `ggml-vulkan.dll`）。
 
 ### 3. 启动使用
 
@@ -131,3 +164,14 @@ pip install -r requirements.txt
 - 程序会在后台无黑框自动拉起 `:18081` (SenseVoice DirectML) 与 `:18082` (Qwen3-4B Vulkan) 服务；
 - 托盘图标变为绿色后即可按住热键说话、实时出字；
 - 右键托盘图标 → **⚙ 设置...** 可调整热键组合、预览刷新间隔、剪贴板回退阈值，并可一键开启 **开机自动启动（高权限计划任务，防前后台 UIPI 拦截及 Copilot 弹窗）**。
+
+---
+
+## 致谢与上游开源项目
+
+- [FunAudioLLM/SenseVoice](https://github.com/FunAudioLLM/SenseVoice) — 多语种语音识别模型 SenseVoice-Small
+- [HaujetZhao/SenseVoice-ONNX](https://github.com/HaujetZhao/SenseVoice-ONNX) — 纯净 ONNX 推理封装（`sensevoice_engine`）、DirectML 优化思路与 CTC 热词雷达
+- [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) — 跨平台 Vulkan LLM 本地推理后端
+- [Qwen/Qwen3-4B-GGUF](https://huggingface.co/Qwen/Qwen3-4B-GGUF) — 轻量高效的中文语义校对底座模型
+- [microsoft/onnxruntime](https://github.com/microsoft/onnxruntime) — DirectML 硬件加速运行时
+
