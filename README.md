@@ -28,6 +28,15 @@
 > 左图：对着输入框说「hello hello hello，今天天气怎么样？」，文字在光标处实时出现，悬浮窗显示「已重整上屏 (368 ms)」。
 > 右图：托盘菜单显示两个后端的在线状态，可一键恢复、启停和重启服务。
 
+<table>
+<tr>
+<td width="50%" align="center"><b>设置窗口（中文）</b><br><img src="assets/settings-zh.png" alt="设置窗口中文"></td>
+<td width="50%" align="center"><b>Settings (English)</b><br><img src="assets/settings-en.png" alt="Settings window in English"></td>
+</tr>
+</table>
+
+> 托盘菜单、设置窗口和悬浮提示都有中文 / English 两套界面，在设置里的「界面语言」切换，默认跟随 Windows 显示语言。
+
 ## 💡 使用案例
 
 **① 中英混说，直接上屏**
@@ -62,6 +71,7 @@
 | ✂️ **克制的 AI 校对** | 只在含口癖或缺标点时触发；不改用词、不动英文术语 |
 | ⌨️ **Win11 Copilot 键** | 硬件级吞掉 `Copilot (F23)` 事件，不弹搜索；支持多热键同时生效 |
 | 🛡️ **自愈** | 休眠唤醒自动重连麦克风，后端掉线自动拉起，托盘一键恢复 |
+| 🌐 **中英双语界面** | 托盘、设置、悬浮提示支持中文 / English，设置里一键切换，默认跟随系统语言 |
 
 ## 🆚 对比
 

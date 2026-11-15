@@ -28,8 +28,17 @@
 > Left: dictating "hello hello hello, 今天天气怎么样？" into an input box. Text appears at the cursor as you speak, and the overlay shows "已重整上屏 (368 ms)" (final text applied in 368 ms).
 > Right: the tray menu shows the online status of both backends, plus one-click recovery and start/stop/restart.
 
+<table>
+<tr>
+<td width="50%" align="center"><b>Settings (English)</b><br><img src="assets/settings-en.png" alt="Settings window in English"></td>
+<td width="50%" align="center"><b>设置窗口（中文）</b><br><img src="assets/settings-zh.png" alt="Settings window in Chinese"></td>
+</tr>
+</table>
+
+> The tray menu, settings window and overlay messages come in English and Chinese. Switch under **Interface language** in Settings; the default follows your Windows display language.
+
 > [!NOTE]
-> The app UI (tray menu, settings window, overlay) is currently Chinese only. The ASR model is run with the language fixed to Chinese (`lid=zh`), and the polishing prompt is written for Chinese text.
+> Only the interface is bilingual. Speech recognition is run with the language fixed to Chinese (`lid=zh`), and the polishing prompt and filler-word rules are written for Chinese text. Log files are also written in Chinese.
 
 ## 💡 Use cases
 
@@ -65,6 +74,7 @@ The mic reconnects after sleep/wake, crashed backends are restarted automaticall
 | ✂️ **Restrained AI polish** | Runs only when fillers or missing punctuation are detected. No rewording, English terms untouched |
 | ⌨️ **Win11 Copilot key** | Swallows the `Copilot (F23)` event so no search pops up. Multiple hotkeys can be active at once |
 | 🛡️ **Self-healing** | Mic auto-reconnect after sleep, backend auto-restart, one-click recovery from the tray |
+| 🌐 **Bilingual UI** | Tray, settings and overlay in English or Chinese. Switch in Settings; defaults to your Windows language |
 
 ## 🆚 Comparison
 
@@ -131,7 +141,7 @@ modelscope download --model Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local_dir 
 
 **3. Run**
 
-Double-click [`start_tray.bat`](start_tray.bat). Once the tray icon is ready, hold the hotkey and talk. Right-click the tray icon → **Settings** (设置) to record hotkeys or enable elevated auto-start.
+Double-click [`start_tray.bat`](start_tray.bat). Once the tray icon is ready, hold the hotkey and talk. Right-click the tray icon → **Settings** to record hotkeys, switch the interface language or enable elevated auto-start.
 
 ## 📁 Layout
 

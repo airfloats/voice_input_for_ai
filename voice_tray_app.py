@@ -82,6 +82,143 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VoiceInputAI")
 
+# ================= 界面多语言 (UI i18n: zh / en) =================
+UI_LANG = "zh"
+_STRINGS: dict[str, dict[str, str]] = {
+    # --- tray menu ---
+    "m_asr": {"zh": "SenseVoice 核显 (18081): {s}", "en": "SenseVoice iGPU (18081): {s}"},
+    "m_llm": {"zh": "Qwen3-4B 核显 (18082): {s}", "en": "Qwen3-4B iGPU (18082): {s}"},
+    "st_on": {"zh": "● 在线", "en": "● Online"},
+    "st_off": {"zh": "○ 离线", "en": "○ Offline"},
+    "m_polish": {"zh": "启用 Qwen3-4B 核显重整润色", "en": "Enable Qwen3-4B polishing (iGPU)"},
+    "m_live": {"zh": "边说边在光标处出字（松开重整）", "en": "Type at cursor while speaking (polish on release)"},
+    "m_preview": {"zh": "按住说话时悬浮窗实时预览", "en": "Live preview overlay while speaking"},
+    "m_drag": {"zh": "调整悬浮窗位置（显示 15 秒可拖动）", "en": "Move overlay (draggable for 15 s)"},
+    "m_reset_pos": {"zh": "重置悬浮窗位置（回右下角）", "en": "Reset overlay position (bottom-right)"},
+    "m_capslock": {"zh": "同时启用 CapsLock 备用热键", "en": "Also use CapsLock as backup hotkey"},
+    "m_autostart": {"zh": "开机自动启动（高权限自启）", "en": "Start at login (elevated)"},
+    "m_recover": {"zh": "🔄 一键恢复（重置热键 + 麦克风）", "en": "🔄 Quick recover (reset hotkeys + mic)"},
+    "m_start": {"zh": "▶ 启动后端模型服务（当前：{s}）", "en": "▶ Start model backends (now: {s})"},
+    "m_stop": {"zh": "⏹ 关闭后端模型服务（当前：{s}）", "en": "⏹ Stop model backends (now: {s})"},
+    "m_restart": {"zh": "🔄 重启后端模型服务（当前：{s}）", "en": "🔄 Restart model backends (now: {s})"},
+    "b_off": {"zh": "○ 已关闭", "en": "○ Stopped"},
+    "b_run": {"zh": "● 运行中", "en": "● Running"},
+    "b_part": {"zh": "◐ 部分运行", "en": "◐ Partially running"},
+    "m_settings": {"zh": "⚙ 设置...", "en": "⚙ Settings..."},
+    "m_open_dir": {"zh": "📂 打开 {d} 目录", "en": "📂 Open {d}"},
+    "m_log": {"zh": "📄 查看运行日志", "en": "📄 View log"},
+    "m_exit": {"zh": "❌ 退出（关闭全部服务）", "en": "❌ Quit (stop all services)"},
+    # --- tray tooltip ---
+    "tip_listening": {"zh": "VoiceInputAI - 正在聆听...", "en": "VoiceInputAI - Listening..."},
+    "tip_ready": {
+        "zh": "VoiceInputAI - 就绪（按住 Copilot 键边说边出字，松开重整）",
+        "en": "VoiceInputAI - Ready (hold your hotkey to speak, release to polish)",
+    },
+    "tip_stopped": {"zh": "VoiceInputAI - 后端服务已关闭", "en": "VoiceInputAI - Backends stopped"},
+    "tip_starting": {
+        "zh": "VoiceInputAI - 启动中 (ASR:{asr} / 核显LLM:{llm})",
+        "en": "VoiceInputAI - Starting (ASR: {asr} / iGPU LLM: {llm})",
+    },
+    "tip_loading": {"zh": "VoiceInputAI - 正在启动核显模型...", "en": "VoiceInputAI - Loading iGPU models..."},
+    "w_on": {"zh": "在线", "en": "online"},
+    "w_off": {"zh": "离线", "en": "offline"},
+    # --- overlay ---
+    "ov_drag_title": {"zh": "✋ 拖动此悬浮窗到理想位置", "en": "✋ Drag this overlay where you like"},
+    "ov_drag_body": {
+        "zh": "按住左键拖动即可调整，松开自动保存（15 秒后自动隐藏）",
+        "en": "Hold the left button to drag; saved on release (hides after 15 s)",
+    },
+    "ov_saved": {"zh": "✅ 设置已保存并生效", "en": "✅ Settings saved and applied"},
+    "ov_saved_partial": {"zh": "⚠ 部分设置已保存", "en": "⚠ Some settings saved"},
+    "ov_saved_partial_body": {
+        "zh": "开机自启计划任务更新失败（需管理员权限）",
+        "en": "Failed to update the auto-start task (administrator rights required)",
+    },
+    "ov_mic_fail": {"zh": "麦克风打开失败，正在刷新设备", "en": "Failed to open microphone, refreshing devices"},
+    "ov_listening": {"zh": "🎤 正在聆听（松开即重整）", "en": "🎤 Listening (release to polish)"},
+    "ov_live": {"zh": "🎤 实时识别 ({t}s)", "en": "🎤 Live recognition ({t}s)"},
+    "ov_no_mic": {"zh": "⚠ 未收到麦克风声音", "en": "⚠ No microphone audio received"},
+    "ov_no_mic_body": {"zh": "已自动刷新音频设备，请再试一次", "en": "Audio devices refreshed, please try again"},
+    "ov_finalizing": {"zh": "⚡ 核显识别精校中...", "en": "⚡ Finalizing on iGPU..."},
+    "ov_no_speech": {"zh": "未识别到有效语音", "en": "No valid speech detected"},
+    "ov_polishing": {"zh": "✨ Qwen3-4B 核显重整中...", "en": "✨ Polishing with Qwen3-4B..."},
+    "ov_polishing_live": {"zh": "✨ 核显实时重整中...", "en": "✨ Polishing on iGPU..."},
+    "ov_done": {"zh": "✅ 已重整上屏 ({ms} ms)", "en": "✅ Typed ({ms} ms)"},
+    "ov_recovered": {"zh": "✅ 已恢复热键与麦克风", "en": "✅ Hotkeys and microphone recovered"},
+    "ov_recovered_body": {"zh": "按住 Copilot 键即可正常说话", "en": "Hold your hotkey to speak"},
+    "ov_autostart_on": {"zh": "✅ 开机自启已开启", "en": "✅ Auto-start enabled"},
+    "ov_autostart_off": {"zh": "✅ 开机自启已关闭", "en": "✅ Auto-start disabled"},
+    "ov_autostart_fail": {"zh": "⚠ 开机自启切换失败", "en": "⚠ Failed to toggle auto-start"},
+    "ov_autostart_fail_body": {
+        "zh": "更新计划任务需要管理员权限",
+        "en": "Updating the scheduled task requires administrator rights",
+    },
+    # --- settings window ---
+    "s_title": {"zh": "VoiceInputAI 设置", "en": "VoiceInputAI Settings"},
+    "s_header": {"zh": "⚙ VoiceInputAI 偏好设置", "en": "⚙ VoiceInputAI Preferences"},
+    "s_autostart": {
+        "zh": "开机自启（以高权限计划任务自启，防 Copilot 弹搜索）",
+        "en": "Start at login (elevated scheduled task, prevents Copilot search popup)",
+    },
+    "s_capslock": {"zh": "同时启用 CapsLock 备用热键", "en": "Also use CapsLock as a backup hotkey"},
+    "s_polish": {
+        "zh": "启用 Qwen3-4B 核显智能校对（仅含口癖/缺标点时触发）",
+        "en": "Enable Qwen3-4B polishing (only for fillers / missing punctuation)",
+    },
+    "s_live_cursor": {
+        "zh": "边说边在光标处实时出字（松开替换为终稿）",
+        "en": "Type at the cursor while speaking (replaced by final text on release)",
+    },
+    "s_preview": {"zh": "按住说话时悬浮窗实时预览", "en": "Live preview overlay while speaking"},
+    "s_interval": {"zh": "实时预览刷新间隔 (ms):", "en": "Live preview interval (ms):"},
+    "s_paste_thr": {"zh": "长句改用剪贴板粘贴阈值 (字):", "en": "Use clipboard paste above (chars):"},
+    "s_hotkeys": {
+        "zh": "按住说话热键（可勾选多个同时生效，支持单键或组合键）:",
+        "en": "Push-to-talk hotkeys (tick several to enable at once; single keys or combos):",
+    },
+    "s_delete": {"zh": "删除", "en": "Delete"},
+    "s_record": {"zh": "🎙 录制新增热键", "en": "🎙 Record new hotkey"},
+    "s_rec_cancelled": {"zh": "已取消录制", "en": "Recording cancelled"},
+    "s_rec_added": {"zh": "已添加并勾选热键: {spec}", "en": "Added and enabled hotkey: {spec}"},
+    "s_rec_waiting": {"zh": "⌛ 等待按键（再点或 Esc 取消）", "en": "⌛ Press a key (click again or Esc to cancel)"},
+    "s_rec_hint": {
+        "zh": "请按下想要设定的单键或组合键（Esc 取消录制）...",
+        "en": "Press the key or combo you want (Esc to cancel)...",
+    },
+    "s_checked_all": {"zh": "已勾选全部热键", "en": "All hotkeys enabled"},
+    "s_reset_default_done": {"zh": "已恢复默认 Copilot 热键", "en": "Restored the default Copilot hotkey"},
+    "s_check_all": {"zh": "全选启用", "en": "Enable all"},
+    "s_reset_default": {"zh": "恢复默认", "en": "Restore default"},
+    "s_move_overlay": {"zh": "调整悬浮窗位置（可拖动）", "en": "Move overlay (draggable)"},
+    "s_reset_overlay": {"zh": "重置到右下角", "en": "Reset to bottom-right"},
+    "s_cancel": {"zh": "取消", "en": "Cancel"},
+    "s_save": {"zh": "保存并生效", "en": "Save & apply"},
+}
+
+
+def _detect_system_lang() -> str:
+    try:
+        lang_id = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        return "zh" if (lang_id & 0x3FF) == 0x04 else "en"
+    except Exception:
+        return "zh"
+
+
+def set_ui_language(code: str) -> str:
+    """code: 'zh' | 'en' | 'auto'（auto 跟随 Windows 显示语言，非中文则用英文）。"""
+    global UI_LANG
+    UI_LANG = code if code in ("zh", "en") else _detect_system_lang()
+    return UI_LANG
+
+
+def tr(key: str, **kwargs) -> str:
+    entry = _STRINGS.get(key)
+    if entry is None:
+        return key
+    text = entry.get(UI_LANG) or entry["zh"]
+    return text.format(**kwargs) if kwargs else text
+
+
 # ================= Win32 常量 & SendInput（防抢焦点 / 去修饰键 / Unicode 实时出字） =================
 VK_BACK = 0x08
 VK_LEFT = 0x25
@@ -591,8 +728,8 @@ class FloatingOverlay:
 
     def show_drag_preview(self) -> None:
         self.show(
-            "✋ 拖动此悬浮窗到理想位置",
-            "按住左键拖动即可调整，松开自动保存（15 秒后自动隐藏）",
+            tr("ov_drag_title"),
+            tr("ov_drag_body"),
             "#38BDF8",
         )
         self.hide(15000)
@@ -745,7 +882,7 @@ class FloatingOverlay:
             win = tk.Toplevel(root)
             settings_win = win
             win.withdraw()
-            win.title("VoiceInputAI 设置")
+            win.title(tr("s_title"))
             win.configure(bg="#0F172A")
             win.resizable(False, False)
 
@@ -768,7 +905,7 @@ class FloatingOverlay:
 
             tk.Label(
                 container,
-                text="⚙ VoiceInputAI 偏好设置",
+                text=tr("s_header"),
                 fg="#38BDF8",
                 bg="#0F172A",
                 font=("Microsoft YaHei UI", 13, "bold"),
@@ -782,6 +919,7 @@ class FloatingOverlay:
             v_capslock = tk.BooleanVar(value=bool(state.get("enable_capslock_backup", False)))
             v_interval = tk.StringVar(value=str(state.get("preview_interval_ms", 420)))
             v_paste_thr = tk.StringVar(value=str(state.get("paste_threshold_chars", 300)))
+            v_lang = tk.StringVar(value=str(state.get("ui_language", "auto")))
 
             chk_opts = {
                 "bg": "#0F172A",
@@ -794,34 +932,57 @@ class FloatingOverlay:
                 "pady": 4,
             }
 
+            lang_row = tk.Frame(container, bg="#0F172A")
+            lang_row.pack(fill="x", pady=(0, 6))
+            tk.Label(
+                lang_row,
+                text="界面语言 / Language:",
+                fg="#CBD5E1",
+                bg="#0F172A",
+                font=("Microsoft YaHei UI", 10),
+            ).pack(side="left")
+            for _val, _txt in (("auto", "Auto / 自动"), ("zh", "中文"), ("en", "English")):
+                tk.Radiobutton(
+                    lang_row,
+                    text=_txt,
+                    value=_val,
+                    variable=v_lang,
+                    bg="#0F172A",
+                    fg="#F8FAFC",
+                    activebackground="#0F172A",
+                    activeforeground="#F8FAFC",
+                    selectcolor="#1E293B",
+                    font=("Microsoft YaHei UI", 10),
+                ).pack(side="left", padx=(10, 0))
+
             tk.Checkbutton(
                 container,
-                text="开机自启（以高权限计划任务自启，防 Copilot 弹搜索）",
+                text=tr("s_autostart"),
                 variable=v_autostart,
                 **chk_opts,
             ).pack(fill="x")
             chk_capslock = tk.Checkbutton(
                 container,
-                text="同时启用 CapsLock 备用热键",
+                text=tr("s_capslock"),
                 variable=v_capslock,
                 **chk_opts,
             )
             chk_capslock.pack(fill="x")
             tk.Checkbutton(
                 container,
-                text="启用 Qwen3-4B 核显智能校对（仅含口癖/缺标点时触发）",
+                text=tr("s_polish"),
                 variable=v_polish,
                 **chk_opts,
             ).pack(fill="x")
             tk.Checkbutton(
                 container,
-                text="边说边在光标处实时出字（松开替换为终稿）",
+                text=tr("s_live_cursor"),
                 variable=v_cursor,
                 **chk_opts,
             ).pack(fill="x")
             tk.Checkbutton(
                 container,
-                text="按住说话时悬浮窗实时预览",
+                text=tr("s_preview"),
                 variable=v_preview,
                 **chk_opts,
             ).pack(fill="x")
@@ -831,7 +992,7 @@ class FloatingOverlay:
 
             tk.Label(
                 num_frame,
-                text="实时预览刷新间隔 (ms):",
+                text=tr("s_interval"),
                 fg="#CBD5E1",
                 bg="#0F172A",
                 font=("Microsoft YaHei UI", 10),
@@ -851,7 +1012,7 @@ class FloatingOverlay:
 
             tk.Label(
                 num_frame,
-                text="长句改用剪贴板粘贴阈值 (字):",
+                text=tr("s_paste_thr"),
                 fg="#CBD5E1",
                 bg="#0F172A",
                 font=("Microsoft YaHei UI", 10),
@@ -873,7 +1034,7 @@ class FloatingOverlay:
             hk_frame.pack(fill="x")
             tk.Label(
                 hk_frame,
-                text="按住说话热键（可勾选多个同时生效，支持单键或组合键）:",
+                text=tr("s_hotkeys"),
                 fg="#CBD5E1",
                 bg="#0F172A",
                 font=("Microsoft YaHei UI", 9, "bold"),
@@ -967,7 +1128,7 @@ class FloatingOverlay:
 
                 tk.Button(
                     row,
-                    text="删除",
+                    text=tr("s_delete"),
                     command=on_del_row,
                     bg="#334155",
                     fg="#CBD5E1",
@@ -1017,19 +1178,19 @@ class FloatingOverlay:
             lbl_rec_hint = tk.Label(hk_frame, text="", fg="#38BDF8", bg="#0F172A", font=("Microsoft YaHei UI", 9), anchor="w")
             lbl_rec_hint.pack(fill="x")
 
-            btn_rec = tk.Button(hk_btn_row, text="🎙 录制新增热键", **btn_small)
+            btn_rec = tk.Button(hk_btn_row, text=tr("s_record"), **btn_small)
             recording_state = {"active": False}
 
             def _apply_captured_hotkey(spec: str) -> None:
                 if not win.winfo_exists():
                     return
                 recording_state["active"] = False
-                btn_rec.configure(text="🎙 录制新增热键", bg="#1E293B")
+                btn_rec.configure(text=tr("s_record"), bg="#1E293B")
                 if spec == "ESC_CANCEL":
-                    lbl_rec_hint.configure(text="已取消录制")
+                    lbl_rec_hint.configure(text=tr("s_rec_cancelled"))
                     return
                 add_hotkey_row(spec, checked=True, scroll_to_end=True)
-                lbl_rec_hint.configure(text=f"已添加并勾选热键: {spec}")
+                lbl_rec_hint.configure(text=tr("s_rec_added", spec=spec))
 
             hotkey_capture_apply = _apply_captured_hotkey
 
@@ -1039,13 +1200,13 @@ class FloatingOverlay:
                 if recording_state["active"]:
                     recording_state["active"] = False
                     self._set_capture_cb(None)
-                    btn_rec.configure(text="🎙 录制新增热键", bg="#1E293B")
-                    lbl_rec_hint.configure(text="已取消录制")
+                    btn_rec.configure(text=tr("s_record"), bg="#1E293B")
+                    lbl_rec_hint.configure(text=tr("s_rec_cancelled"))
                     return
 
                 recording_state["active"] = True
-                btn_rec.configure(text="⌛ 等待按键（再点或 Esc 取消）", bg="#0369A1")
-                lbl_rec_hint.configure(text="请按下想要设定的单键或组合键（Esc 取消录制）...")
+                btn_rec.configure(text=tr("s_rec_waiting"), bg="#0369A1")
+                lbl_rec_hint.configure(text=tr("s_rec_hint"))
                 win.focus_set()
 
                 def _on_captured(spec: str) -> None:
@@ -1061,7 +1222,7 @@ class FloatingOverlay:
                     var.set(True)
                     if spec_k == "CapsLock":
                         v_capslock.set(True)
-                lbl_rec_hint.configure(text="已勾选全部热键")
+                lbl_rec_hint.configure(text=tr("s_checked_all"))
 
             def reset_default_hotkeys() -> None:
                 for _, r_frame in list(hk_entries.values()):
@@ -1071,10 +1232,10 @@ class FloatingOverlay:
                 v_capslock.set(False)
                 hk_rows_frame.update_idletasks()
                 _sync_hk_scroll()
-                lbl_rec_hint.configure(text="已恢复默认 Copilot 热键")
+                lbl_rec_hint.configure(text=tr("s_reset_default_done"))
 
-            tk.Button(hk_btn_row, text="全选启用", command=check_all_hotkeys, **btn_small).pack(side="left", padx=(0, 6))
-            tk.Button(hk_btn_row, text="恢复默认", command=reset_default_hotkeys, **btn_small).pack(side="left")
+            tk.Button(hk_btn_row, text=tr("s_check_all"), command=check_all_hotkeys, **btn_small).pack(side="left", padx=(0, 6))
+            tk.Button(hk_btn_row, text=tr("s_reset_default"), command=reset_default_hotkeys, **btn_small).pack(side="left")
 
             pos_frame = tk.Frame(container, bg="#0F172A", pady=6)
             pos_frame.pack(fill="x")
@@ -1091,13 +1252,13 @@ class FloatingOverlay:
             }
             tk.Button(
                 pos_frame,
-                text="调整悬浮窗位置（可拖动）",
+                text=tr("s_move_overlay"),
                 command=self.show_drag_preview,
                 **btn_style,
             ).pack(side="left", padx=(0, 8))
             tk.Button(
                 pos_frame,
-                text="重置到右下角",
+                text=tr("s_reset_overlay"),
                 command=self.reset_position,
                 **btn_style,
             ).pack(side="left")
@@ -1124,13 +1285,14 @@ class FloatingOverlay:
                     "hotkeys": new_hotkeys,
                     "preview_interval_ms": iv,
                     "paste_threshold_chars": pt,
+                    "ui_language": v_lang.get(),
                 }
                 on_close()
                 threading.Thread(target=apply_fn, args=(new_cfg,), daemon=True).start()
 
             tk.Button(
                 btn_bar,
-                text="取消",
+                text=tr("s_cancel"),
                 command=on_close,
                 bg="#334155",
                 fg="#F8FAFC",
@@ -1144,7 +1306,7 @@ class FloatingOverlay:
             ).pack(side="right")
             tk.Button(
                 btn_bar,
-                text="保存并生效",
+                text=tr("s_save"),
                 command=on_save,
                 bg="#0284C7",
                 fg="#FFFFFF",
@@ -1268,7 +1430,9 @@ class VoiceInputApp:
         self._cap_held_mods: set[int] = set()
         self.preview_interval_ms = int(PREVIEW_INTERVAL * 1000)
         self.paste_threshold_chars = 300
+        self.ui_language = "auto"
         self._load_config()
+        set_ui_language(self.ui_language)
         self._rebuild_hotkeys()
         self.auto_start = self._is_autostart_enabled()
 
@@ -1310,6 +1474,9 @@ class VoiceInputApp:
                 self.enable_live_preview = bool(cfg.get("enable_live_preview", self.enable_live_preview))
                 self.enable_live_cursor_typing = bool(cfg.get("enable_live_cursor_typing", self.enable_live_cursor_typing))
                 self.enable_capslock_backup = bool(cfg.get("enable_capslock_backup", self.enable_capslock_backup))
+                lang_cfg = str(cfg.get("ui_language", "auto"))
+                if lang_cfg in ("auto", "zh", "en"):
+                    self.ui_language = lang_cfg
                 raw_hotkeys = cfg.get("hotkeys")
                 if isinstance(raw_hotkeys, list):
                     cleaned = [str(x).strip() for x in raw_hotkeys if _parse_hotkey_spec(str(x)) is not None]
@@ -1332,6 +1499,7 @@ class VoiceInputApp:
                         "enable_live_cursor_typing": self.enable_live_cursor_typing,
                         "enable_capslock_backup": self.enable_capslock_backup,
                         "hotkeys": self.hotkeys,
+                        "ui_language": self.ui_language,
                         "preview_interval_ms": self.preview_interval_ms,
                         "paste_threshold_chars": self.paste_threshold_chars,
                     },
@@ -1416,6 +1584,7 @@ class VoiceInputApp:
             "enable_live_preview": self.enable_live_preview,
             "enable_capslock_backup": self.enable_capslock_backup,
             "hotkeys": list(self.hotkeys),
+            "ui_language": self.ui_language,
             "preview_interval_ms": self.preview_interval_ms,
             "paste_threshold_chars": self.paste_threshold_chars,
         }
@@ -1433,6 +1602,10 @@ class VoiceInputApp:
         self._rebuild_hotkeys()
         self.preview_interval_ms = int(new_cfg["preview_interval_ms"])
         self.paste_threshold_chars = int(new_cfg["paste_threshold_chars"])
+        lang_new = str(new_cfg.get("ui_language", self.ui_language))
+        if lang_new in ("auto", "zh", "en"):
+            self.ui_language = lang_new
+        set_ui_language(self.ui_language)
         self._save_config()
 
         want_autostart = bool(new_cfg["auto_start"])
@@ -1448,9 +1621,9 @@ class VoiceInputApp:
             except Exception:
                 pass
         if ok_auto:
-            self.overlay.show("✅ 设置已保存并生效", "", "#10B981")
+            self.overlay.show(tr("ov_saved"), "", "#10B981")
         else:
-            self.overlay.show("⚠ 部分设置已保存", "开机自启计划任务更新失败（需管理员权限）", "#F59E0B")
+            self.overlay.show(tr("ov_saved_partial"), tr("ov_saved_partial_body"), "#F59E0B")
         self.overlay.hide(1800)
 
     # ---------- 图标绘制 ----------
@@ -1474,16 +1647,16 @@ class VoiceInputApp:
         asr_ok, llm_ok = self.svc.asr_online, self.svc.llm_online
         if self._recording:
             color = "#EF4444"  # 红色：正在录音
-            tip = "VoiceInputAI - 正在聆听..."
+            tip = tr("tip_listening")
         elif asr_ok and (llm_ok or not self.enable_llm_polish):
             color = "#10B981"  # 绿色：就绪
-            tip = "VoiceInputAI - 就绪（按住 Copilot 键边说边出字，松开重整）"
+            tip = tr("tip_ready")
         elif self.svc.stopping:
             color = "#64748B"  # 灰色：已停止
-            tip = "VoiceInputAI - 后端服务已关闭"
+            tip = tr("tip_stopped")
         else:
             color = "#F59E0B"  # 黄色：加载/部分离线
-            tip = f"VoiceInputAI - 启动中 (ASR:{'在线' if asr_ok else '离线'} / 核显LLM:{'在线' if llm_ok else '离线'})"
+            tip = tr("tip_starting", asr=tr("w_on" if asr_ok else "w_off"), llm=tr("w_on" if llm_ok else "w_off"))
 
         self.tray_icon.icon = self._make_icon_image(color)
         self.tray_icon.title = tip
@@ -1542,13 +1715,13 @@ class VoiceInputApp:
             except Exception as e:
                 logger.error("打开麦克风失败: %s", e)
                 self._recording = False
-                self.overlay.show("麦克风打开失败，正在刷新设备", str(e), "#EF4444")
+                self.overlay.show(tr("ov_mic_fail"), str(e), "#EF4444")
                 self.overlay.hide(2500)
                 threading.Thread(target=self._reinit_audio_backend, daemon=True).start()
                 return
 
         self._update_tray_appearance()
-        self.overlay.show("🎤 正在聆听（松开即重整）", "", "#EF4444")
+        self.overlay.show(tr("ov_listening"), "", "#EF4444")
 
         if (
             self.enable_llm_polish
@@ -1623,7 +1796,7 @@ class VoiceInputApp:
                             self._sync_cursor_text_locked(preview, is_live=True)
                         logger.info("[预览 %.1fs] asr=%r | cursor=%r", elapsed, preview, self._live_cursor_text)
                         if self.enable_live_preview:
-                            self.overlay.show(f"🎤 实时识别 ({elapsed:.1f}s)", preview, "#38BDF8")
+                            self.overlay.show(tr("ov_live", t=f"{elapsed:.1f}"), preview, "#38BDF8")
                     else:
                         unchanged_count += 1
                         if unchanged_count in (4, 10):
@@ -1666,7 +1839,7 @@ class VoiceInputApp:
                     self._sync_cursor_text_locked("", is_live=False)
             if duration >= MIN_HOLD_SECONDS and len(pcm) < int(SAMPLE_RATE * 0.2):
                 logger.warning("录音 %.1fs 但未收到麦克风采样 (samples=%d)，自动刷新音频设备", duration, len(pcm))
-                self.overlay.show("⚠ 未收到麦克风声音", "已自动刷新音频设备，请再试一次", "#EF4444")
+                self.overlay.show(tr("ov_no_mic"), tr("ov_no_mic_body"), "#EF4444")
                 self.overlay.hide(2000)
                 threading.Thread(target=self._reinit_audio_backend, daemon=True).start()
             else:
@@ -1871,7 +2044,7 @@ class VoiceInputApp:
     def _process_and_paste(self, pcm: np.ndarray, duration: float, session_id: int) -> None:
         with self._processing_lock:
             t0 = time.perf_counter()
-            self.overlay.show("⚡ 核显识别精校中...", self._last_preview_text, "#F59E0B")
+            self.overlay.show(tr("ov_finalizing"), self._last_preview_text, "#F59E0B")
             raw_text = self._call_asr(pcm, timeout=15.0, is_preview=False)
             if not raw_text:
                 raw_text = self._last_preview_text
@@ -1882,7 +2055,7 @@ class VoiceInputApp:
                 with self._cursor_lock:
                     if self._live_cursor_text and session_id == self._session_id:
                         self._sync_cursor_text_locked("", is_live=False)
-                self.overlay.show("未识别到有效语音", "", "#64748B")
+                self.overlay.show(tr("ov_no_speech"), "", "#64748B")
                 self.overlay.hide(1000)
                 return
 
@@ -1894,10 +2067,10 @@ class VoiceInputApp:
                 or not raw_text.endswith(("。", "？", "！", ".", "?", "!"))
             )
             if self.enable_llm_polish and needs_polish:
-                self.overlay.show("✨ Qwen3-4B 核显重整中...", raw_text, "#A855F7")
+                self.overlay.show(tr("ov_polishing"), raw_text, "#A855F7")
 
                 def on_partial(partial_text: str) -> None:
-                    self.overlay.show("✨ 核显实时重整中...", partial_text, "#A855F7")
+                    self.overlay.show(tr("ov_polishing_live"), partial_text, "#A855F7")
 
                 final_text = self._call_llm_polish_stream(raw_text, on_partial=on_partial)
 
@@ -1917,7 +2090,7 @@ class VoiceInputApp:
                     # 用户紧接着按下了下一段发言且流式尚未写入，直接粘贴以免错位退格
                     self._paste_to_cursor(final_text)
 
-            self.overlay.show(f"✅ 已重整上屏 ({cost_ms:.0f} ms)", final_text, "#10B981")
+            self.overlay.show(tr("ov_done", ms=f"{cost_ms:.0f}"), final_text, "#10B981")
             self.overlay.hide(1500)
 
     def _confirm_key_release(self, vk: int, expected_timer: threading.Timer) -> None:
@@ -2069,16 +2242,16 @@ class VoiceInputApp:
             threading.Thread(target=self.svc.start_services, daemon=True).start()
 
         self._update_tray_appearance()
-        self.overlay.show("✅ 已恢复热键与麦克风", "按住 Copilot 键即可正常说话", "#10B981")
+        self.overlay.show(tr("ov_recovered"), tr("ov_recovered_body"), "#10B981")
         self.overlay.hide(1800)
 
     # ---------- 托盘菜单与状态巡检 ----------
     def _build_menu(self) -> pystray.Menu:
         def status_asr(_):
-            return f"SenseVoice 核显 (18081): {'● 在线' if self.svc.asr_online else '○ 离线'}"
+            return tr("m_asr", s=tr("st_on" if self.svc.asr_online else "st_off"))
 
         def status_llm(_):
-            return f"Qwen3-4B 核显 (18082): {'● 在线' if self.svc.llm_online else '○ 离线'}"
+            return tr("m_llm", s=tr("st_on" if self.svc.llm_online else "st_off"))
 
         def toggle_polish(icon, item):
             self.enable_llm_polish = not self.enable_llm_polish
@@ -2113,27 +2286,27 @@ class VoiceInputApp:
                     except Exception:
                         pass
                 if ok:
-                    self.overlay.show("✅ 开机自启已" + ("开启" if self.auto_start else "关闭"), "", "#10B981")
+                    self.overlay.show(tr("ov_autostart_on" if self.auto_start else "ov_autostart_off"), "", "#10B981")
                 else:
-                    self.overlay.show("⚠ 开机自启切换失败", "更新计划任务需要管理员权限", "#F59E0B")
+                    self.overlay.show(tr("ov_autostart_fail"), tr("ov_autostart_fail_body"), "#F59E0B")
                 self.overlay.hide(1800)
 
             threading.Thread(target=_do, daemon=True).start()
 
         def backend_state_tag() -> str:
             if self.svc.stopping or (not self.svc.asr_online and not self.svc.llm_online):
-                return "○ 已关闭"
+                return tr("b_off")
             if self.svc.asr_online and self.svc.llm_online:
-                return "● 运行中"
-            return "◐ 部分运行"
+                return tr("b_run")
+            return tr("b_part")
 
         def label_toggle_services(_):
             if self.svc.stopping or (not self.svc.asr_online and not self.svc.llm_online):
-                return f"▶ 启动后端模型服务（当前：{backend_state_tag()}）"
-            return f"⏹ 关闭后端模型服务（当前：{backend_state_tag()}）"
+                return tr("m_start", s=backend_state_tag())
+            return tr("m_stop", s=backend_state_tag())
 
         def label_restart_services(_):
-            return f"🔄 重启后端模型服务（当前：{backend_state_tag()}）"
+            return tr("m_restart", s=backend_state_tag())
 
         def on_toggle_services(icon, item):
             def _do():
@@ -2190,47 +2363,47 @@ class VoiceInputApp:
             pystray.MenuItem(status_llm, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "启用 Qwen3-4B 核显重整润色",
+                lambda _: tr("m_polish"),
                 toggle_polish,
                 checked=lambda _: self.enable_llm_polish,
             ),
             pystray.MenuItem(
-                "边说边在光标处出字（松开重整）",
+                lambda _: tr("m_live"),
                 toggle_live_cursor,
                 checked=lambda _: self.enable_live_cursor_typing,
             ),
             pystray.MenuItem(
-                "按住说话时悬浮窗实时预览",
+                lambda _: tr("m_preview"),
                 toggle_preview,
                 checked=lambda _: self.enable_live_preview,
             ),
             pystray.MenuItem(
-                "调整悬浮窗位置（显示 15 秒可拖动）",
+                lambda _: tr("m_drag"),
                 lambda icon, item: self.overlay.show_drag_preview(),
             ),
             pystray.MenuItem(
-                "重置悬浮窗位置（回右下角）",
+                lambda _: tr("m_reset_pos"),
                 lambda icon, item: self.overlay.reset_position(),
             ),
             pystray.MenuItem(
-                "同时启用 CapsLock 备用热键",
+                lambda _: tr("m_capslock"),
                 toggle_capslock,
                 checked=lambda _: self.enable_capslock_backup,
             ),
             pystray.MenuItem(
-                "开机自动启动（高权限自启）",
+                lambda _: tr("m_autostart"),
                 toggle_autostart,
                 checked=lambda _: self.auto_start,
             ),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("🔄 一键恢复（重置热键 + 麦克风）", on_recover),
+            pystray.MenuItem(lambda _: tr("m_recover"), on_recover),
             pystray.MenuItem(label_toggle_services, on_toggle_services),
             pystray.MenuItem(label_restart_services, on_restart_services),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("⚙ 设置...", on_open_settings),
-            pystray.MenuItem(f"📂 打开 {BASE_DIR} 目录", on_open_dir),
-            pystray.MenuItem("📄 查看运行日志", on_open_log),
-            pystray.MenuItem("❌ 退出（关闭全部服务）", on_exit),
+            pystray.MenuItem(lambda _: tr("m_settings"), on_open_settings),
+            pystray.MenuItem(lambda _: tr("m_open_dir", d=BASE_DIR), on_open_dir),
+            pystray.MenuItem(lambda _: tr("m_log"), on_open_log),
+            pystray.MenuItem(lambda _: tr("m_exit"), on_exit),
         )
 
     def _health_monitor_loop(self) -> None:
@@ -2263,7 +2436,7 @@ class VoiceInputApp:
         self.tray_icon = pystray.Icon(
             "VoiceInputAI",
             self._make_icon_image("#F59E0B"),
-            "VoiceInputAI - 正在启动核显模型...",
+            tr("tip_loading"),
             menu=self._build_menu(),
         )
         threading.Thread(target=self._health_monitor_loop, daemon=True).start()
