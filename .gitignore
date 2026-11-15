@@ -1,0 +1,25 @@
+# Runtime logs, temp files & caches
+logs/
+tmp/
+__pycache__/
+*.py[cod]
+*.log
+*.pid
+*.wav
+
+# User local runtime preferences
+app_config.json
+overlay_pos.json
+
+# Prebuilt binaries, models & bundled dependencies
+bin/
+models/
+py_deps/
+*.exe
+*.dll
+*.pyd
+*.onnx
+*.gguf
+*.bin
+*.zip
+*.7z
