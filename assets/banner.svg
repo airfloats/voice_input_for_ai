@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240" viewBox="0 0 900 240" role="img" aria-label="VoiceInputAI">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="240" rx="20" fill="url(#bg)"/>
+  <!-- mic icon -->
+  <g transform="translate(90 60)" fill="none" stroke="url(#accent)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="34" y="0" width="32" height="64" rx="16"/>
+    <path d="M14 48c0 22 16 38 36 38s36-16 36-38"/>
+    <path d="M50 86v22M32 108h36"/>
+  </g>
+  <!-- sound waves -->
+  <g stroke="url(#accent)" stroke-width="6" stroke-linecap="round" opacity="0.85">
+    <path d="M210 100v40"/><path d="M230 82v76"/><path d="M250 94v52"/><path d="M270 110v20"/>
+  </g>
+  <text x="310" y="115" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="56" font-weight="700" fill="#F8FAFC">VoiceInput<tspan fill="url(#accent)">AI</tspan></text>
+  <text x="312" y="156" font-family="Microsoft YaHei, PingFang SC, Segoe UI, sans-serif" font-size="22" fill="#CBD5E1">边说边在光标处出字 · 100% 本地核显加速</text>
+  <text x="312" y="190" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#94A3B8">DirectML ASR  ·  Vulkan LLM  ·  Zero-Clipboard typing</text>
+</svg>
