@@ -2,7 +2,7 @@
 
 <img src="assets/banner-en.svg" alt="VoiceInputAI" width="720">
 
-**Hold a hotkey and talk. Text appears at your cursor in real time. Runs entirely on your local iGPU: offline, free, and it never touches your clipboard.**
+**Hold a hotkey and talk with live overlay preview, then insert polished text on release. Runs locally on your iGPU: offline, free, with optional live cursor typing.**
 
 [简体中文](README.md) · **English**
 
@@ -20,13 +20,13 @@
 
 <table>
 <tr>
-<td width="50%" align="center"><b>Live typing, then a final polish on release</b><br><img src="assets/demo-typing.png" alt="Live typing demo"></td>
+<td width="50%" align="center"><b>Live preview · optional live cursor typing, polished on release</b><br><img src="assets/demo-typing.png" alt="Live typing demo"></td>
 <td width="50%" align="center"><b>Tray menu: status at a glance</b><br><img src="assets/demo-tray.png" alt="Tray menu"></td>
 </tr>
 </table>
 
-> Left: dictating "hello hello hello, 今天天气怎么样？" into an input box. Text appears at the cursor as you speak, and the overlay shows "已重整上屏 (368 ms)" (final text applied in 368 ms).
-> Right: the tray menu shows the online status of both backends, plus one-click recovery and start/stop/restart.
+> Left: with **Type at the cursor while speaking** enabled — dictating "hello hello hello, 今天天气怎么样？" into an input box. Text updates live and the overlay shows "已重整上屏 (368 ms)" (final text applied in 368 ms).
+> Right: the tray menu shows the online status of both backends, plus live-typing toggle, one-click recovery, and start/stop/restart.
 
 <table>
 <tr>
@@ -42,8 +42,8 @@
 
 ## 💡 Use cases
 
-**① Mixed Chinese/English dictation, straight into any app**
-Hold the hotkey in an IDE, terminal, browser, or chat app. Text shows up at the cursor with no window switching and no pasting.
+**① Mixed Chinese/English dictation into any app**
+Hold the hotkey in an IDE, terminal, browser, or chat app. Live recognition streams in the overlay, and the final text inserts on release (short phrases `<= 24` chars via `SendInput` Unicode, longer text via instant clipboard paste; or enable live cursor typing from the tray).
 
 **② Filler-word removal and punctuation** (actual output from the local Qwen3-4B)
 
@@ -68,12 +68,12 @@ The mic reconnects after sleep/wake, crashed backends are restarted automaticall
 
 | | |
 |---|---|
-| ⚡ **Type as you speak** | Incremental recognition about every 420 ms, typed at the cursor of any window |
-| 📋 **Clipboard untouched** | Direct Win32 `SendInput` Unicode typing. Falls back to paste only for very long text |
+| ⚡ **Live preview · optional live typing** | Incremental ASR every ~420 ms in the overlay, instant final insert on release (enable live typing at cursor anytime in tray) |
+| 📋 **Direct typing & instant paste** | Up to 24 chars use Win32 `SendInput` Unicode (clipboard untouched); longer text uses instant clipboard paste |
 | 🧠 **Local iGPU dual engine** | SenseVoice (DirectML) for ASR, Qwen3-4B (Vulkan) for on-demand polishing. No discrete GPU needed |
 | ✂️ **Restrained AI polish** | Runs only when fillers or missing punctuation are detected. No rewording, English terms untouched |
-| ⌨️ **Win11 Copilot key** | Swallows the `Copilot (F23)` event so no search pops up. Multiple hotkeys can be active at once |
-| 🛡️ **Self-healing** | Mic auto-reconnect after sleep, backend auto-restart, one-click recovery from the tray |
+| ⌨️ **Win11 Copilot key** | Swallows `Copilot (F23)` so search doesn't pop up; multi-hotkey support and UAC elevation for elevated windows |
+| 🛡️ **Self-healing & hot-memory pin** | Pins 448 MB CPU hot working set across tray/ASR/LLM, async tray updates, mic auto-reconnect, backend watchdog |
 | 🌐 **Bilingual UI** | Tray, settings and overlay in English or Chinese. Switch in Settings; defaults to your Windows language |
 
 ## 🆚 Comparison
@@ -81,8 +81,8 @@ The mic reconnects after sleep/wake, crashed backends are restarted automaticall
 | | Cloud subscription tools | Typical offline tools | **VoiceInputAI** |
 |---|:---:|:---:|:---:|
 | Privacy / cost | Uploaded to cloud · paid | Local · free | **Local · free** |
-| When text appears | After you finish | Pasted all at once on release | **While you speak** |
-| How text is inserted | Often via clipboard | Often via clipboard | **`SendInput` typing** |
+| When text appears | After you finish | Pasted all at once on release | **Instant on release (optional live typing)** |
+| How text is inserted | Often via clipboard | Often via clipboard | **`SendInput` (`<= 24` chars) · instant paste** |
 | Acceleration | Cloud | Mostly CPU / CUDA | **iGPU: DirectML + Vulkan** |
 | LLM polishing | May rewrite your meaning | Manual trigger | **On demand, minimal edits** |
 
@@ -91,21 +91,21 @@ The mic reconnects after sleep/wake, crashed backends are restarted automaticall
 ```text
 Hotkey down ─ WH_KEYBOARD_LL swallows the system key event
   │
-  ├─ While speaking (~420 ms) ─▶ SenseVoice (:18081) ─▶ overlay preview + incremental typing at cursor
+  ├─ While speaking (~420 ms) ─▶ SenseVoice (:18081) ─▶ overlay preview (optional incremental cursor typing)
   │
   └─ Hotkey up ─▶ final recognition
                    ├─ already clean ─────────────────────────┐
-                   └─ fillers / no punctuation ─▶ Qwen3-4B (:18082) ─┴─▶ replace in place with final text
+                   └─ fillers / no punctuation ─▶ Qwen3-4B (:18082) ─┴─▶ direct type / paste (or block-select replace)
 ```
 
 <details>
-<summary><b>Live-typing implementation details</b></summary>
+<summary><b>Responsiveness & live-typing implementation details</b></summary>
 
-- **Previews never block the final pass**: preview requests use a non-blocking lock and are skipped when the engine is busy, so the final recognition after release never queues.
-- **Append-only while held**: no Backspace is sent while the hotkey is still down, so Electron apps don't see `Win+Shift+Backspace` as a shortcut. A prefix diff corrects the text after release.
-- **Safer large replacements**: when more than 8 characters must be replaced, it selects them with `Shift+Left` and replaces in one go, avoiding per-character Backspace flicker.
-- **No DirectML stalls**: `dml_pad_to=30` fixed-length padding plus a two-pass warm-up avoids operator recompilation for variable-length audio.
-- **Overlay bubble**: `WS_EX_NOACTIVATE`, never steals focus, draggable, remembers its position.
+- **Previews never block the final pass**: preview and final passes use dedicated HTTP sessions plus a non-blocking lock, so final recognition on release never queues behind previews.
+- **Append-only while held (live cursor mode)**: no Backspace is sent while modifiers are held; non-punctuation tail anchors with 1–2 char revision backtracking prevent Electron `Win+Shift+Backspace` shortcuts or duplicate characters.
+- **Fast block replacement**: for long replacements above the paste threshold in desktop editors/browsers, `Shift+Up` line jumps + `GetClipboardSequenceNumber` probes shrink multi-line selections cleanly (safely falling back to batched `Shift+Left` in terminals).
+- **Load resilience & PortAudio safety**: pins a `448 MB` (`96 / 128 / 224 MB`) hard minimum CPU working set across tray/ASR/LLM processes, offloads tray icon updates asynchronously, and serializes PortAudio open/close/reinit under an `RLock` + cooldown to prevent shutdown/concurrency faults.
+- **No DirectML stalls & overlay bubble**: `dml_pad_to=30` fixed-length padding with two-pass warm-up; `WS_EX_NOACTIVATE` overlay never steals focus, drags smoothly, and remembers its position.
 
 </details>
 
@@ -141,16 +141,17 @@ modelscope download --model Qwen/Qwen3-4B-GGUF Qwen3-4B-Q4_K_M.gguf --local_dir 
 
 **3. Run**
 
-Double-click [`start_tray.bat`](start_tray.bat). Once the tray icon is ready, hold the hotkey and talk. Right-click the tray icon → **Settings** to record hotkeys, switch the interface language or enable elevated auto-start.
+Double-click [`start.bat`](start.bat) (automatically prompts UAC elevation so global hotkeys work across elevated windows and working-set pinning succeeds, while cleaning up any stale processes on restart; [`start_tray.bat`](start_tray.bat) remains for standard non-elevated launch). Once the tray icon turns green, hold the hotkey and talk. Right-click the tray icon → **Settings** to record hotkeys, switch the interface language, toggle live cursor typing, or enable elevated auto-start.
 
 ## 📁 Layout
 
 ```text
-voice_tray_app.py       Tray controller · hotkey hook · live typing · settings window · backend supervisor
+voice_tray_app.py       Tray controller · hotkey hook · overlay/insertion · settings · backend supervisor
 sensevoice_server.py    Local SenseVoice DirectML ASR service (:18081)
 sensevoice_engine/      Pure-ONNX inference wrapper
 scripts/polish_test.py  Polish endpoint test
-start_tray.bat          Entry point
+start.bat               Elevated one-click launch / restart entry point (recommended)
+start_tray.bat          Standard non-elevated tray entry point
 ```
 
 ## 🙏 Credits
